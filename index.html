@@ -1,0 +1,226 @@
+<html>
+<head>
+<style type="text/css">
+	div#form {
+		width: 100%;
+		background-color: yellow;
+		text-align: center;
+	}
+	input { font-size: 1em;}
+
+	div#generated {
+		background-color: yellow;
+		width: 50%;
+		float: left;
+		font-size: 1em;
+	}
+	div.border { padding: 20px;}
+	div#choices {
+		background-color: #ddffdd;
+		width: 50%;
+		float: left;
+		font-size: 1em;
+	}
+	div.choice:hover {
+		background-color: yellow;
+	}
+	div#config {
+		width: 100%; text-align: center; background-color: #dddddd;
+	}
+	div#markov_input {
+		font-style: italic;
+		font-size: 1em;
+	}
+	div#choose_label {
+		font-size: 1em;
+	}
+	
+
+</style>
+
+
+<script language="Javascript">
+class Markov {
+  getChoicesForChainStartingWith(chain_length, words) {
+    var chain_root = this.model[chain_length];
+    var node = chain_root;
+    for (var i = 0; i < words.length; i++) {
+      var word = words[i];
+      if (!(word in node)) {
+        //{'How': {'do' => {'I' => ['love']}}}
+        return null;
+      }
+      node = node[word];
+    }
+    if (typeof node != 'object') {
+      this.debugPrint('getChoicesForChainStartingWith:type error', node);
+      return null;
+    }
+    if (Object.keys(node).length < 100) {
+      this.debugPrint('node', node);
+    } else {
+      this.debugPrint('node', 'node too big to print');
+    }
+
+    return node;
+  }
+  
+  constructor(model) {
+    this.model = model;
+    this.max_length = 5;
+  }
+  debugPrint(s, c) {
+    console.log(s);
+    console.log(c);
+  }
+
+  objChoicesToList(obj) {
+    var list = [];
+    var total = 0;
+    for (var key in obj) {
+      if (!obj.hasOwnProperty(key)) continue;
+      total += obj[key]; 
+    }
+    for (var key in obj) {
+      if (!obj.hasOwnProperty(key)) continue;
+      var value = obj[key];
+      var percent = value / total;
+      list.push({word: key, frequency: value, percent: percent});
+    }
+    list.sort((a,b) => (a.frequency > b.frequency) ? -1 : 1);
+    return list;
+  }
+
+  getChoicesForWords(words) {
+    words = [... words];
+    var choices;
+    var chain_length = words.length + 1;
+    chain_length = Math.min(chain_length, this.max_length)
+    if (words.length > chain_length - 1) {
+      words = words.slice(words.length - (chain_length - 1));
+      this.debugPrint('words is now: ', words);
+    }
+    while (chain_length > 0) {
+      choices = this.getChoicesForChainStartingWith(chain_length, words);
+      if (!choices) {
+        chain_length = chain_length - 1;
+        words.shift();
+        this.debugPrint('changing words.  words is now:', words);
+        continue;
+      }
+      return this.objChoicesToList(choices).slice(0, 10);
+    }
+    return [];
+  }
+}
+
+class App {
+  constructor(filename, markov) {
+		this.filename = filename;
+    this.markov = markov;
+    this.words = [];
+    this.choices = [];
+		this.tokensWithoutSpaces = ['.', ',', '?', '!', '\n'];
+  }
+
+	choose(i) {
+		var choice = this.choices[i];
+		var word = choice.word;
+		this.words.push(word);
+    this.choices = this.markov.getChoicesForWords(this.words);
+		this.updateUI();
+	}
+  debugPrint(s, c) {
+    console.log(s);
+    console.log(c);
+  }
+
+  submitForm() {
+    // do something
+    this.words = document.getElementById("starting_words").value.split(" ");
+    this.debugPrint('submitForm::words', this.words);
+    this.choices = this.markov.getChoicesForWords(this.words);
+    this.debugPrint('submitForm::choices', this.choices);
+    this.updateUI();
+
+  }
+  updateUI() {
+    console.log('updateUI');
+		this.updateUIChoices();
+		this.updateUIGenerated();
+		this.updateUIConfig();
+  }
+	updateUIConfig() {
+		document.getElementById('filename').innerHTML = this.filename;	
+		document.getElementById('chain_length').innerHTML = this.markov.max_length;	
+	}
+
+	escapeHTML(html) {
+		return new Option(html).innerHTML;
+	}
+
+	updateUIChoices() {
+		var s = '';
+
+		var chain_length = this.markov.max_length - 1;
+		chain_length = Math.min(chain_length, this.words.length);
+		var words = this.words.slice(this.words.length - chain_length);
+		for (var i = 0; i < words.length; i++) {
+			var word = words[i];
+			if (this.tokensWithoutSpaces.includes(word)) {
+				s += word;
+			} else {
+				s += ' ' + this.escapeHTML(word);
+			}
+		}
+		s = '<div id="markov_input">' + s + '</div>';
+		s += '<div id="choose_label">---------</div>';
+
+		for (var i = 0; i < this.choices.length; i++)	{
+			var choice = this.choices[i];
+			var percent = Number(choice.percent).toLocaleString(undefined,{style: 'percent', minimumFractionDigits:0});
+			s += '<div class="choice" onclick="document.app.choose(' + i + ');">Option ' + (i+1) + ': ' + this.escapeHTML(choice.word) + ' (' + percent + ')</div>';
+		}
+		document.getElementById('choices').innerHTML =
+			'<div class="border">' + s + '</div>';
+	}
+	updateUIGenerated() {
+		var s = '';
+		for (var i = 0; i < this.words.length; i++) {
+			var word = this.words[i];
+			if (this.tokensWithoutSpaces.includes(word)) {
+				s += word;
+			} else {
+				s += ' ' + this.escapeHTML(word);
+			}
+		}
+		document.getElementById('generated').innerHTML = 
+			'<div class="border">' + s + '</div>';
+	}
+	
+}
+
+function handle_onload() {
+  var fileName = "shakespeare.json";
+  fetch(fileName, {encoding: "utf-8"}).then((res) => {
+    data = res.json(); return data}).then( (data) => {
+      var markov = new Markov(data);
+      document.app = new App(fileName, markov);
+      document.getElementById("go").disabled=0;
+    }).catch( (error) => { console.error("Unable to fetch data:", error); });
+}
+</script>
+</head>
+<body onload="handle_onload();">
+  <H1>Markov Text Generator<H1>
+  <div id="form">
+		<input type="text" id="starting_words">
+		<input type="submit" id="go" value="go"
+    disabled onclick="document.app.submitForm();"></div>
+  <div id="config">Filename: <span id="filename"></span>, 
+			Chain Length: <span id="chain_length"></span></div>
+  <div id="generated">Generated Text</div>
+  <div id="choices">Choices</div>
+
+</body>
+</html>
